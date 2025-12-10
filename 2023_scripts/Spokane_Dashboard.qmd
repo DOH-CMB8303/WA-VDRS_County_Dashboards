@@ -1,0 +1,1455 @@
+---
+title: "Spokane County"
+subtitle: "National Violent Death Reporting System (2016-2023)"
+format: 
+  dashboard:
+    embed-resources: true
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+pacman::p_load(
+  rstatix,
+  tidyverse,
+  dplyr,
+  lubridate,
+  readxl,
+  visdat,
+  gtsummary,
+  gt,
+  ggplot2,
+  haven,
+  janitor,
+  questionr,
+  plotly,
+  reactable,
+  bslib,
+  bsicons,
+  shiny)
+
+
+nvdrs_var_spokane<-readRDS("Y:/Confidential/HSQA/CHS/Washington Violent Death Reporting System/County Level VDRS Dashboards/VDRS County Dashboards/2023_Dashboards/nvdrs_var_spokane.rds")
+
+# creating subsets based on manner of death/weapon type
+# Homicide
+nvdrs_homicide <- nvdrs_var_spokane %>% 
+         filter(AbstractorDeathmanner_c %in% c("Homicide"))
+
+# Suicide
+nvdrs_suicide <- nvdrs_var_spokane %>% 
+         filter(AbstractorDeathmanner_c %in% c("Suicide or intentional self-harm"))
+
+# Unintentional firearm
+nvdrs_firearm <- nvdrs_var_spokane %>% 
+         filter(WeaponType1 %in% c("Firearm"))
+
+
+```
+
+# Homicide
+
+## Row 1- % change and demographics
+
+### Column 1 - % change over time
+
+```{r}
+# subset number of homicides
+count_data_homicides <- nvdrs_homicide %>%
+  group_by(IncidentYear, AbstractorDeathmanner_c) %>%
+  summarise(count = n(), .groups = "drop")
+
+count_data_homicides <- count_data_homicides %>%
+  mutate(count = as.numeric(count))
+
+# Count line plot
+hom_time <- ggplot(count_data_homicides, aes(x = IncidentYear, y = count, group = AbstractorDeathmanner_c)) +
+  geom_line() +
+  labs(title = "Homicides by Year",
+       x = "Incident Year",
+       y = "Number of Homicides") +
+  theme_minimal()
+
+ggplotly(hom_time)
+```
+
+### Column 2 - demographics
+
+```{r}
+
+# Ensure factor levels are explicitly set
+nvdrs_homicide <- nvdrs_homicide %>%
+  mutate(
+#    Homeless = factor(as.character(Homeless), levels = c("No", 
+#                                                         "Yes", 
+#                                                         "Unknown")),
+    Military = factor(Military, levels = c("No", 
+                                           "Yes", 
+                                           "Unknown")),
+    Transgender = factor(Transgender, levels = c("No, Not Available, Unknown", 
+                                                 "Yes")))
+
+
+# Recode NA values into "Unknown" or "No, Not Available, Unknown"
+nvdrs_homicide <- nvdrs_homicide %>%
+  mutate(
+    SexualOrientation = ifelse(is.na(SexualOrientation), "Unknown", SexualOrientation),
+    Homeless = factor(ifelse(is.na(Homeless), "Unknown", as.character(Homeless)), 
+                      levels = c("No", "Yes", "Unknown")),
+    HousingInstability = factor(ifelse(is.na(HousingInstability), "Unknown", as.character(HousingInstability)), 
+                      levels = c("No", "Yes", "Unknown")))       #NA becomes "Unknown" while keeping factor levels
+
+# nvdrs_suicide <- nvdrs_suicide %>%
+#   mutate(ResidenceZip = as.character(ResidenceZip))
+
+
+
+# converting age into age groups
+nvdrs_homicide <- nvdrs_homicide %>%
+  mutate(AgeGroup = case_when(
+    AgeYears_c <= 17 ~ "0-17",
+    AgeYears_c > 17 & AgeYears_c <= 25 ~ "18-25",
+    AgeYears_c > 25 & AgeYears_c <= 35 ~ "26-35",
+    AgeYears_c > 35 & AgeYears_c <= 45 ~ "36-45",
+    AgeYears_c > 45 & AgeYears_c <= 55 ~ "46-55",
+    AgeYears_c > 55 & AgeYears_c <= 65 ~ "56-65",
+    AgeYears_c > 65  ~ "65+",
+    is.na(AgeYears_c) ~ "Unknown"))
+
+
+#table
+hom_demo_tbl <- nvdrs_homicide %>% 
+  select(AgeGroup, 
+         Sex, 
+         RaceEthnicity_c, 
+         SexualOrientation, 
+         Transgender, 
+         Military, 
+         Homeless, 
+         HousingInstability,
+       #  ResidenceZip,
+         IncidentYear) %>% 
+tbl_summary(by = IncidentYear,
+    label = list(
+      AgeGroup = "Age (Years)",
+      Sex = "Sex",
+      RaceEthnicity_c = "Race/Ethnicity",
+      SexualOrientation = "Sexual Orientation",
+      Transgender = "Transgender Status",
+      Military = "Past/Current Military Service",
+      Homeless = "Homeless Status",
+      HousingInstability = "Housing Instability Status",
+  #    ResidenceZip = "Residence Zip Code",
+      IncidentYear = "Year of Incident"),
+  statistic = list(all_categorical() ~ "{p}%")) %>% 
+  bold_labels()
+
+hom_demo_tbl
+
+```
+
+## Row 2
+
+### Column 1 - Mental Health/substance abuse
+
+```{r}
+# select variables
+MH_SA_homicide <- nvdrs_homicide %>% 
+  select(MentalHealthProblem_c,
+         DepressedMood_c,
+         MentalIllnessTreatmentCurrnt_c,
+         HistoryMentalIllnessTreatmnt_c,
+         AlcoholProblem_c,
+         SubstanceAbuseOther_c)
+
+# Convert to long format
+MH_SA_hom_long <- MH_SA_homicide %>%
+  pivot_longer(cols = c(MentalHealthProblem_c,
+         DepressedMood_c,
+         MentalIllnessTreatmentCurrnt_c,
+         HistoryMentalIllnessTreatmnt_c,
+         AlcoholProblem_c,
+         SubstanceAbuseOther_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Percent = Count / sum(Count) * 100)
+
+
+
+
+# convert Variable into a factor before plotting
+MH_SA_hom_long <- MH_SA_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c("HistoryMentalIllnessTreatmnt_c", 
+                                      "MentalHealthProblem_c",
+                                      "MentalIllnessTreatmentCurrnt_c",
+                                      "DepressedMood_c", 
+                                      "AlcoholProblem_c", 
+                                      "SubstanceAbuseOther_c"),
+                           labels = c("History of Mental Illness Treatment",
+                                      "Current Mental Health Problem", 
+                                      "Current Mental Illness Treatment",
+                                      "Current Depressed Mood",
+                                      "Current Alcohol Problem",
+                                      "Current Substance Abuse Problem")))
+
+
+
+# Define the variables
+all_vars <- c("MentalHealthProblem_c",
+              "DepressedMood_c",
+              "MentalIllnessTreatmentCurrnt_c",
+              "HistoryMentalIllnessTreatmnt_c",
+              "AlcoholProblem_c",
+              "SubstanceAbuseOther_c")
+
+# Create long format and fill in missing (zero count) variables
+MH_SA_hom_long <- nvdrs_homicide %>%
+  select(all_of(all_vars)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  complete(Variable = all_vars, Value = "Yes", fill = list(Count = 0)) %>%
+  group_by(Variable) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) %>%
+  ungroup()
+
+# convert Variable into a factor before plotting
+MH_SA_hom_long <- MH_SA_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c("HistoryMentalIllnessTreatmnt_c", 
+                                      "MentalHealthProblem_c",
+                                      "MentalIllnessTreatmentCurrnt_c",
+                                      "DepressedMood_c", 
+                                      "AlcoholProblem_c", 
+                                      "SubstanceAbuseOther_c"),
+                           labels = c("History of Mental Illness Treatment",
+                                      "Current Mental Health Problem", 
+                                      "Current Mental Illness Treatment",
+                                      "Current Depressed Mood",
+                                      "Current Alcohol Problem",
+                                      "Current Substance Abuse Problem")))
+
+
+# # Create a bar plot using geom_col
+MH_SA_hom_plot <- ggplot(MH_SA_hom_long %>% filter(Value == "Yes"), 
+       aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  # geom_text(aes(label = paste0(round(Percent, 1), "%")), 
+  #           position = position_dodge(width = 0.9), 
+  #           vjust = -0.5, 
+  #           size = 5) +
+  labs(title = "Mental Health/Substance Abuse",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("History of Mental Illness Treatment" = "#3069B2", 
+               "Current Mental Health Problem" = "#2699BB", 
+               "Current Mental Illness Treatment" = "#BDB76B",
+               "Current Depressed Mood" = "#819556", 
+               "Current Alcohol Problem" = "#932A6E",
+               "Current Substance Abuse Problem" = "#FFCC00")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank())
+
+ggplotly(MH_SA_hom_plot)
+
+
+```
+
+### relationship and life stressors graph
+
+```{r}
+
+rel_stress_homicide <- nvdrs_homicide %>% 
+  select(FamilyRelationship_c,
+         RelationshipProblemOther_c,
+         InterpersonalViolencePerp_c,
+         InterpersonalViolenceVictim_c,
+         VictimKnownToAuthorities_c,
+         RecentRelease,
+         AbusedAsChild_c)
+
+# Convert recent release to yes/no
+rel_stress_homicide$RecentRelease_binary <- ifelse(rel_stress_homicide$RecentRelease == "No evidence of recent release", "No/Unknown", "Yes")
+
+
+# Convert to long format
+rel_stress_hom_long <- rel_stress_homicide %>%
+  pivot_longer(cols = c(
+    FamilyRelationship_c,
+         RelationshipProblemOther_c,
+         InterpersonalViolencePerp_c,
+         InterpersonalViolenceVictim_c,
+         VictimKnownToAuthorities_c,
+         RecentRelease_binary,
+         AbusedAsChild_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+
+
+# convert Variable into a factor before plotting
+rel_stress_hom_long <- rel_stress_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c(
+         "FamilyRelationship_c",
+         "RelationshipProblemOther_c",
+         "InterpersonalViolencePerp_c",
+         "InterpersonalViolenceVictim_c",
+         "VictimKnownToAuthorities_c",
+         "RecentRelease_binary",
+         "AbusedAsChild_c"),
+                           labels = c("Family Relationship Problem", 
+                                      "Other Relationship Problem",
+                                      "Previous Perpetrator of Violence",
+                                      "Previous Victim of Violence",
+                                      "Victim Known to Authorities",
+                                      "Recent Release From Institution",
+                                      "Abused As a Child")))
+
+
+
+# Define the variables
+stress_vars <- c("FamilyRelationship_c",
+         "RelationshipProblemOther_c",
+         "InterpersonalViolencePerp_c",
+         "InterpersonalViolenceVictim_c",
+         "VictimKnownToAuthorities_c",
+         "RecentRelease_binary",
+         "AbusedAsChild_c")
+
+# Create long format and fill in missing (zero count) variables
+rel_stress_hom_long <- rel_stress_homicide %>%
+  select(all_of(stress_vars)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  complete(Variable = stress_vars, Value = "Yes", fill = list(Count = 0)) %>%
+  group_by(Variable) %>%
+   mutate(Percent = round(Count / sum(Count) * 100, 1)) %>%
+  ungroup()
+
+
+# convert Variable into a factor before plotting
+rel_stress_hom_long <- rel_stress_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c(
+         "FamilyRelationship_c",
+         "RelationshipProblemOther_c",
+         "InterpersonalViolencePerp_c",
+         "InterpersonalViolenceVictim_c",
+         "VictimKnownToAuthorities_c",
+         "RecentRelease_binary",
+         "AbusedAsChild_c"),
+                           labels = c("Family Relationship Problem", 
+                                      "Other Relationship Problem",
+                                      "Previous Perpetrator of Violence",
+                                      "Previous Victim of Violence",
+                                      "Victim Known to Authorities",
+                                      "Recent Release From Institution",
+                                      "Abused As a Child")))
+
+
+
+# # Create a bar plot using geom_col
+rel_stress_hom_plot <- ggplot(rel_stress_hom_long %>% filter(Value == "Yes"), 
+       aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  # geom_text(aes(label = paste0(round(Percent, 1), "%")),
+  #           position = position_dodge(width = 0.9),
+  #           vjust = -0.5,
+  #           size = 4) +
+  labs(title = "Relationship and Life Stressors",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  # scale_y_continuous(limits = c(0, 7)) +
+  scale_fill_manual(
+values = c("Family Relationship Problem" = "#3069B2",
+           "Other Relationship Problem" = "#2699BB", 
+           "Previous Perpetrator of Violence" = "#819556",
+           "Previous Victim of Violence" = "#932A6E",
+           "Victim Known to Authorities" = "#FFCC00",
+           "Recent Release From Institution" = "#CD853F",
+           "Abused As a Child" = "#BDB76B")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank())
+
+ggplotly(rel_stress_hom_plot)
+
+
+```
+
+### Homicide specific circumstances
+
+```{r}
+ 
+specific_circs_homicide <- nvdrs_homicide %>% 
+  select(IntimatePartnerViolence_c,
+         Bystander_c,
+         RandomViolence_c,
+         DrugInvolvement_c,
+         JustifiableSelfDefense_c)
+
+
+# Convert to long format
+specific_circs_hom_long <- specific_circs_homicide %>%
+  pivot_longer(cols = c(
+         IntimatePartnerViolence_c,
+         Bystander_c,
+         RandomViolence_c,
+         DrugInvolvement_c,
+         JustifiableSelfDefense_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+ mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+
+# convert Variable into a factor before plotting
+specific_circs_hom_long <- specific_circs_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c(
+         "IntimatePartnerViolence_c",
+         "Bystander_c",
+         "RandomViolence_c",
+         "DrugInvolvement_c",
+         "JustifiableSelfDefense_c"),
+                           labels = c("Intimate Partner Violence",
+                                      "Victim Was a Bystander", 
+                                      "Random Violence",
+                                      "Drug Involvement",
+                                      "Justifiable Self Defense")))
+
+
+
+
+# Define the variables 
+hom_vars <- c("IntimatePartnerViolence_c",
+         "Bystander_c",
+         "RandomViolence_c",
+         "DrugInvolvement_c",
+         "JustifiableSelfDefense_c")
+
+# Create long format and fill in missing (zero count) variables
+specific_circs_hom_long <- specific_circs_homicide %>%
+  select(all_of(hom_vars)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  group_by(Variable, Value) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  complete(Variable = hom_vars, Value = "Yes", fill = list(Count = 0)) %>%
+  group_by(Variable) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) %>%
+  ungroup()
+
+
+
+# convert Variable into a factor before plotting
+specific_circs_hom_long <- specific_circs_hom_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c(
+         "IntimatePartnerViolence_c",
+         "Bystander_c",
+         "RandomViolence_c",
+         "DrugInvolvement_c",
+         "JustifiableSelfDefense_c"),
+                           labels = c("Intimate Partner Violence",
+                                      "Victim Was a Bystander", 
+                                      "Random Violence",
+                                      "Drug Involvement",
+                                      "Justifiable Self Defense")))
+
+
+
+# # Create a bar plot using geom_col
+specific_circs_hom_plot <- ggplot(specific_circs_hom_long %>% filter(Value == "Yes"), 
+       aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  # geom_text(aes(label = paste0(round(Percent, 1), "%")),
+  #           position = position_dodge(width = 0.9),
+  #           vjust = -1.5,
+  #           size = 4) +
+  labs(title = "Homicide Specific Circumstances",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Intimate Partner Violence" = "#3069B2",
+           "Victim Was a Bystander" = "#2699BB", 
+           "Random Violence" = "#819556",
+           "Drug Involvement" = "#932A6E",
+           "Justifiable Self Defense" = "#FFCC00")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank())
+
+ggplotly(specific_circs_hom_plot)
+```
+
+# Suicide
+
+## Row 1- % change and demographics
+
+### Column 1 - % change over time
+
+```{r}
+# subset number of suicides
+count_suicides <- nvdrs_suicide %>%
+  group_by(IncidentYear, AbstractorDeathmanner_c) %>%
+  summarise(count = n(), .groups = "drop")
+
+count_suicide <- count_suicides %>%
+  mutate(count = as.numeric(count))
+
+# Count line plot
+suic_time <- ggplot(count_suicides, aes(x = IncidentYear, y = count, group = AbstractorDeathmanner_c)) +
+  geom_line() +
+  labs(title = "Suicides by Year",
+       x = "Incident Year",
+       y = "Number of Suicides") +
+  theme_minimal()
+
+ggplotly(suic_time)
+```
+
+### Column 2 - Table (demographics)
+
+```{r}
+# Ensure factor levels are explicitly set
+nvdrs_suicide <- nvdrs_suicide %>%
+  mutate(
+#    Homeless = factor(as.character(Homeless), levels = c("No", 
+#                                                         "Yes", 
+#                                                         "Unknown")),
+    Military = factor(Military, levels = c("No", 
+                                           "Yes", 
+                                           "Unknown")),
+    Transgender = factor(Transgender, levels = c("No, Not Available, Unknown", 
+                                                 "Yes")))
+
+
+# Recode NA values into "Unknown" or "No, Not Available, Unknown"
+nvdrs_suicide <- nvdrs_suicide %>%
+  mutate(
+    SexualOrientation = ifelse(is.na(SexualOrientation), "Unknown", SexualOrientation),
+    Homeless = factor(ifelse(is.na(Homeless), "Unknown", as.character(Homeless)), 
+                      levels = c("No", "Yes", "Unknown")),
+    HousingInstability = factor(ifelse(is.na(HousingInstability), "Unknown", as.character(HousingInstability)), 
+                      levels = c("No", "Yes", "Unknown")))       #NA becomes "Unknown" while keeping factor levels
+
+nvdrs_suicide <- nvdrs_suicide %>%
+  mutate(ResidenceZip = as.character(ResidenceZip))
+
+
+
+# converting age into age groups
+nvdrs_suicide <- nvdrs_suicide %>%
+  mutate(AgeGroup = case_when(
+    AgeYears_c <= 17 ~ "0-17",
+    AgeYears_c > 17 & AgeYears_c <= 25 ~ "18-25",
+    AgeYears_c > 25 & AgeYears_c <= 35 ~ "26-35",
+    AgeYears_c > 35 & AgeYears_c <= 45 ~ "36-45",
+    AgeYears_c > 45 & AgeYears_c <= 55 ~ "46-55",
+    AgeYears_c > 55 & AgeYears_c <= 65 ~ "56-65",
+    AgeYears_c > 65  ~ "65+",
+    is.na(AgeYears_c) ~ "Unknown"))
+
+
+#table
+suic_demo_tbl <- nvdrs_suicide %>% 
+  select(AgeGroup, 
+         Sex, 
+         RaceEthnicity_c, 
+         SexualOrientation, 
+         Transgender, 
+         Military, 
+         Homeless, 
+         HousingInstability,
+     #    ResidenceZip,
+         IncidentYear) %>% 
+tbl_summary(by = IncidentYear,
+    label = list(
+      AgeGroup = "Age (Years)",
+      Sex = "Sex",
+      RaceEthnicity_c = "Race/Ethnicity",
+      SexualOrientation = "Sexual Orientation",
+      Transgender = "Transgender Status",
+      Military = "Past/Current Military Service",
+      Homeless = "Homeless Status",
+      HousingInstability = "Housing Instability Status",
+   #   ResidenceZip = "Residence Zip Code",
+      IncidentYear = "Year of Incident"),
+   statistic = list(all_categorical() ~ "{p}%")) %>% 
+  bold_labels()
+
+suic_demo_tbl
+
+
+```
+
+### Column 3 - mechanism of injury
+
+```{r}
+mech_suicide <- nvdrs_suicide %>% 
+  select(WeaponType1)
+
+# Convert to long format
+mech_suicide_long <- mech_suicide %>%
+  pivot_longer(cols = c(WeaponType1), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) 
+
+# convert Variable into a factor before plotting
+# mech_suicide_long <- mech_suicide_long %>%
+#   mutate(Value = factor(Value, 
+#                            levels = c("Drowning", 
+#                                       "Fall", 
+#                                       "Firearm", 
+#                                       "Hanging, strangulation, suffocation", 
+#                                       "Motor vehicle including buses, motorcycles", 
+#                                       "Other transport vehicle, eg, trains, planes, boats", 
+#                                       "Poisoning", 
+#                                       "Sharp instrument", 
+#                                       "Unknown"),
+#                            labels = c("Drowning", 
+#                                       "Fall", 
+#                                       "Firearm", 
+#                                       "Hanging, strangulation, suffocation", 
+#                                       "Motor vehicle including buses, motorcycles", 
+#                                       "Other transport vehicle, eg, trains, planes, boats", 
+#                                       "Poisoning", 
+#                                       "Sharp instrument", 
+#                                       "Unknown")))
+
+mech_suicide_long <- mech_suicide_long %>%
+  mutate(Value = factor(case_when(is.na(Value) ~ "Unknown", TRUE ~ as.character(Value)), 
+                        levels = c("Drowning", 
+                                   "Fall", 
+                                   "Firearm",
+                                   "Hanging, strangulation, suffocation",
+                                   "Motor vehicle including buses, motorcycles",
+                                   "Other transport vehicle, eg, trains, planes, boats",
+                                   "Poisoning", 
+                                   "Sharp instrument", 
+                                   "Unknown")))
+
+# # Create a bar plot using geom_col
+mech_suic_plot <- mech_suicide_long %>% 
+ggplot(aes(x = Value, y = Percent, fill = factor(Value))) +
+  geom_col(position = "dodge") +
+  labs(title = "Mechanism of Injury",
+       fill = "Weapon Type",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Drowning" = "#3069B2", 
+           "Fall" = "#2699BB",
+           "Firearm" = "#932A6E",
+           "Hanging, strangulation, suffocation" = "#819556",
+           "Motor vehicle including buses, motorcycles" = "#FFCC00",
+           "Other transport vehicle, eg, trains, planes, boats" = "#BDB76B",
+           "Poisoning" = "#CD853F",
+           "Sharp instrument" = "#008B8B",
+           "Unknown" = "#A9A9A9")) +
+    theme_minimal() +
+theme(axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank())  # Removes x-axis tick marks
+
+ggplotly(mech_suic_plot)
+```
+
+## Row 2 - Mental Health/substance abuse, Relationship/life stressors, Crime
+
+### Column 1 - Mental Health/substance abuse
+
+```{r}
+MH_SA_suicide <- nvdrs_suicide %>% 
+  select(MentalHealthProblem_c,
+         DepressedMood_c,
+         MentalIllnessTreatmentCurrnt_c,
+         HistoryMentalIllnessTreatmnt_c,
+         AlcoholProblem_c,
+         SubstanceAbuseOther_c)
+
+# Convert to long format
+MH_SA_suic_long <- MH_SA_suicide %>%
+  pivot_longer(cols = c(MentalHealthProblem_c,
+         DepressedMood_c,
+         MentalIllnessTreatmentCurrnt_c,
+         HistoryMentalIllnessTreatmnt_c,
+         AlcoholProblem_c,
+         SubstanceAbuseOther_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) 
+
+
+# convert Variable into a factor before plotting
+MH_SA_suic_long <- MH_SA_suic_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c("HistoryMentalIllnessTreatmnt_c", 
+                                      "MentalHealthProblem_c",
+                                      "MentalIllnessTreatmentCurrnt_c",
+                                      "DepressedMood_c", 
+                                      "AlcoholProblem_c", 
+                                      "SubstanceAbuseOther_c"),
+                           labels = c("History of Mental Illness Treatment",
+                                      "Current Mental Health Problem", 
+                                      "Current Mental Illness Treatment",
+                                      "Current Depressed Mood",
+                                      "Current Alcohol Problem",
+                                      "Current Substance Abuse Problem")))
+
+
+# # Create a bar plot using geom_col
+MH_SA_suic_plot <- ggplot(MH_SA_suic_long %>% filter(Value == "Yes"), 
+       aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  # geom_text(aes(label = paste0(round(Percent, 1), "%")), 
+  #           position = position_dodge(width = 0.9), 
+  #           vjust = -0.5, 
+  #           size = 5) +
+  labs(title = "Mental Health/Substance Abuse",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("History of Mental Illness Treatment" = "#3069B2", 
+               "Current Mental Health Problem" = "#2699BB", 
+               "Current Mental Illness Treatment" = "#BDB76B",
+               "Current Depressed Mood" = "#819556", 
+               "Current Alcohol Problem" = "#932A6E",
+               "Current Substance Abuse Problem" = "#FFCC00")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggplotly(MH_SA_suic_plot)
+```
+
+### relationship and life stressors
+
+```{r}
+# relationship and life stressors graph
+
+rel_stress_suicide <- nvdrs_suicide %>% 
+  select(FamilyRelationship_c,
+         RelationshipProblemOther_c,
+         InterpersonalViolencePerp_c,
+         InterpersonalViolenceVictim_c,
+         VictimKnownToAuthorities_c,
+         RecentRelease,
+         AbusedAsChild_c)
+
+# Convert recent release to yes/no
+rel_stress_suicide$RecentRelease_binary <- ifelse(rel_stress_suicide$RecentRelease == "No evidence of recent release", "No/Unknown", "Yes")
+
+
+# Convert to long format
+rel_stress_suic_long <- rel_stress_suicide %>%
+  pivot_longer(cols = c(
+    FamilyRelationship_c,
+         RelationshipProblemOther_c,
+         InterpersonalViolencePerp_c,
+         InterpersonalViolenceVictim_c,
+         VictimKnownToAuthorities_c,
+         RecentRelease_binary,
+         AbusedAsChild_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) 
+
+
+
+# convert Variable into a factor before plotting
+rel_stress_suic_long <- rel_stress_suic_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c(
+         "FamilyRelationship_c",
+         "RelationshipProblemOther_c",
+         "InterpersonalViolencePerp_c",
+         "InterpersonalViolenceVictim_c",
+         "VictimKnownToAuthorities_c",
+         "RecentRelease_binary",
+         "AbusedAsChild_c"),
+                           labels = c("Family Relationship Problem", 
+                                      "Other Relationship Problem",
+                                      "Previous Perpetrator of Violence",
+                                      "Previous Victim of Violence",
+                                      "Victim Known to Authorities",
+                                      "Recent Release From Institution",
+                                      "Abused As a Child")))
+
+# # Create a bar plot using geom_col
+rel_stress_suic_plot <- ggplot(rel_stress_suic_long %>% filter(Value == "Yes"), 
+       aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  # geom_text(aes(label = paste0(round(Percent, 1), "%")), 
+  #           position = position_dodge(width = 0.9), 
+  #           vjust = -0.5, 
+  #           size = 5) +
+  labs(title = "Relationship and Life Stressors",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Family Relationship Problem" = "#3069B2",
+           "Other Relationship Problem" = "#2699BB", 
+           "Previous Perpetrator of Violence" = "#819556",
+           "Previous Victim of Violence" = "#932A6E",
+           "Victim Known to Authorities" = "#FFCC00",
+           "Recent Release From Institution" = "#CD853F",
+           "Abused As a Child" = "#BDB76B")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank())
+
+ggplotly(rel_stress_suic_plot)
+
+
+```
+
+### - Suicidal history
+
+::: panel-tabset
+#### Suicidal History
+
+```{r}
+# TAB 1
+
+# subset
+circs_suicide <- nvdrs_suicide %>% 
+  select(SuicideAttemptHistory_c,
+                SuicideThoughtHistory_c,
+                HistorySelfHarm_c,
+                SuicideIntentDisclosed_c)
+
+# Convert to long format
+circs_suicide_long <- circs_suicide %>%
+  pivot_longer(cols = c(SuicideAttemptHistory_c,
+                        SuicideThoughtHistory_c,
+                        HistorySelfHarm_c,
+                        SuicideIntentDisclosed_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+# convert Variable into a factor before plotting
+circs_suicide_long <- circs_suicide_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c("HistorySelfHarm_c", 
+                                      "SuicideThoughtHistory_c",
+                                      "SuicideAttemptHistory_c", 
+                                      "SuicideIntentDisclosed_c"),
+                           labels = c("History of Self Harm",
+                                      "History of Suicidal Thoughts", 
+                                      "History of Suicide Attempt",
+                                      "Suicidal Intent Recently Disclosed")))
+
+# # Create a bar plot using geom_col
+circs_suic_plot <- circs_suicide_long %>% filter(Value == "Yes") %>% 
+ggplot(aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  labs(title = "Suicidal History",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("History of Self Harm" = "#3069B2", 
+           "History of Suicidal Thoughts" = "#2699BB",
+           "History of Suicide Attempt" = "#932A6E",
+           "Suicidal Intent Recently Disclosed" = "#819556")) +
+    theme_minimal() +
+theme(axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank())  # Removes x-axis tick marks
+
+ggplotly(circs_suic_plot)
+```
+
+#### Suicide-specific Circumstances
+
+```{r}
+# TAB 2
+
+# subset
+lifeprob_suicide <- nvdrs_suicide %>% 
+  select(IntimatePartnerProblem_c,
+         PhysicalHealthProblem_c,
+                FinancialProblem_c,
+                JobProblem_c,
+                SchoolProblem_c,
+                EvictionOrLossOfHome_c,
+                RecentSuicideFriendFamily_c,
+                DeathFriendOrFamilyOther_c,
+                TraumaticAnniversary_c)
+
+# Convert to long format
+lifeprob_suic_long <- lifeprob_suicide %>%
+  pivot_longer(cols = c(IntimatePartnerProblem_c,
+         PhysicalHealthProblem_c,
+                FinancialProblem_c,
+                JobProblem_c,
+                SchoolProblem_c,
+                EvictionOrLossOfHome_c,
+                RecentSuicideFriendFamily_c,
+                DeathFriendOrFamilyOther_c,
+                TraumaticAnniversary_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+# convert Variable into a factor before plotting
+lifeprob_suic_long <- lifeprob_suic_long %>%
+  mutate(Variable = factor(Variable, 
+                           levels = c("IntimatePartnerProblem_c",
+                "PhysicalHealthProblem_c",
+                "FinancialProblem_c",
+                "JobProblem_c",
+                "SchoolProblem_c",
+                "EvictionOrLossOfHome_c",
+                "RecentSuicideFriendFamily_c",
+                "DeathFriendOrFamilyOther_c",
+                "TraumaticAnniversary_c"), 
+                           labels = c("Intimate Partner Problem",
+                "Physical Health Problem",
+                "Financial Problem",
+                "Job Problem",
+                "School Problem",
+                "Eviction Or Loss Of Home",
+                "Recent Suicide of Friend or Family",
+                "Non-suicide Death of Friend or Family",
+                "Traumatic Event Anniversary")))
+
+# # Create a bar plot using geom_col
+lifeprob_suic_plot <- lifeprob_suic_long %>% filter(Value == "Yes") %>% 
+ggplot(aes(x = Variable, y = Percent, fill = Variable)) +
+  geom_col(position = "dodge") +
+  labs(title = "Suicide Specific Circumstances",
+       fill = "Documented Circumstance",
+       y = "Percentage") +
+    scale_fill_manual(
+values = c("Physical Health Problem" = "#3069B2",
+                "Financial Problem" = "#2699BB",
+                "Job Problem" = "#932A6E",
+                "School Problem" = "#819556",
+                "Eviction Or Loss Of Home" = "#FFCC00",
+                "Recent Suicide of Friend or Family" = "#BDB76B",
+                "Non-suicide Death of Friend or Family" = "#CD853F",
+                "Traumatic Event Anniversary" = "#008B8B")) +
+  theme_minimal() +
+theme(axis.text.x = element_blank(),
+      axis.title.x = element_blank(),
+      axis.ticks.x = element_blank())
+
+ggplotly(lifeprob_suic_plot)
+```
+:::
+
+# All Firearm Deaths
+
+## Row 1
+
+### Column 1
+
+```{r}
+# % change over time 
+
+# subset number of firearm deaths
+count_firearm <- nvdrs_firearm %>%
+  group_by(IncidentYear, WeaponType1) %>%
+  summarise(count = n(), .groups = "drop")
+
+count_firearm <- count_firearm %>%
+  mutate(count = as.numeric(count))
+
+#factoring IncidentYear
+count_firearm <- count_firearm %>%
+  mutate(IncidentYear = factor(IncidentYear, levels = c("2016","2017","2018", "2019", "2020", "2021", "2022","2023")))
+
+#plot
+firearm_time <- ggplot(count_firearm, aes(x = IncidentYear, y = count, group = WeaponType1)) +
+  geom_line() +
+  labs(title = "Firearm Deaths by Year",
+       x = "Incident Year",
+       y = "Number of Firearm Deaths") +
+  scale_x_discrete(limits = c("2016","2017","2018", "2019", "2020", "2021", "2022","2023")) +  # Ensure correct order
+#  scale_y_continuous(limits = c(0, 3)) +  # Sets y-axis range
+  theme_minimal()
+
+ggplotly(firearm_time)
+```
+
+### Column 2 - Table (demographics)
+
+```{r}
+
+# Ensure factor levels are explicitly set
+nvdrs_firearm <- nvdrs_firearm %>%
+  mutate(
+#    Homeless = factor(as.character(Homeless), levels = c("No", 
+#                                                         "Yes", 
+#                                                         "Unknown")),
+    Military = factor(Military, levels = c("No", 
+                                           "Yes", 
+                                           "Unknown")),
+    Transgender = factor(Transgender, levels = c("No, Not Available, Unknown", 
+                                                 "Yes")))
+
+
+# Recode NA values into "Unknown" or "No, Not Available, Unknown"
+nvdrs_firearm <- nvdrs_firearm %>%
+  mutate(
+    SexualOrientation = ifelse(is.na(SexualOrientation), "Unknown", SexualOrientation),
+    Homeless = factor(ifelse(is.na(Homeless), "Unknown", as.character(Homeless)), 
+                      levels = c("No", "Yes", "Unknown")),
+    HousingInstability = factor(ifelse(is.na(HousingInstability), "Unknown", as.character(HousingInstability)), 
+                      levels = c("No", "Yes", "Unknown")))       #NA becomes "Unknown" while keeping factor levels
+nvdrs_firearm <- nvdrs_firearm %>%
+  mutate(ResidenceZip = as.character(ResidenceZip))
+
+
+
+# converting age into age groups
+nvdrs_firearm <- nvdrs_firearm %>%
+  mutate(AgeGroup = case_when(
+    AgeYears_c <= 17 ~ "0-17",
+    AgeYears_c > 17 & AgeYears_c <= 25 ~ "18-25",
+    AgeYears_c > 25 & AgeYears_c <= 35 ~ "26-35",
+    AgeYears_c > 35 & AgeYears_c <= 45 ~ "36-45",
+    AgeYears_c > 45 & AgeYears_c <= 55 ~ "46-55",
+    AgeYears_c > 55 & AgeYears_c <= 65 ~ "56-65",
+    AgeYears_c > 65  ~ "65+",
+    is.na(AgeYears_c) ~ "Unknown"))
+
+
+#table
+firearm_demo_tbl <- nvdrs_firearm %>% 
+  select(AgeGroup, 
+         Sex, 
+         RaceEthnicity_c, 
+         SexualOrientation, 
+         Transgender, 
+         Military, 
+         Homeless, 
+         HousingInstability,
+      #   ResidenceZip,
+         IncidentYear) %>% 
+tbl_summary(by = IncidentYear,
+    label = list(
+      AgeGroup = "Age (Years)",
+      Sex = "Sex",
+      RaceEthnicity_c = "Race/Ethnicity",
+      SexualOrientation = "Sexual Orientation",
+      Transgender = "Transgender Status",
+      Military = "Past/Current Military Service",
+      Homeless = "Homeless Status",
+      HousingInstability = "Housing Instability Status",
+   #   ResidenceZip = "Residence Zip Code",
+      IncidentYear = "Year of Incident"),
+   statistic = list(all_categorical() ~ "{p}%")) %>% 
+  bold_labels()
+
+
+firearm_demo_tbl
+
+
+```
+
+### Manner of intent
+
+```{r}
+manner_firearm <- nvdrs_firearm %>% 
+  select(AbstractorDeathmanner_c)
+
+# Convert to long format
+manner_firearm_long <- manner_firearm %>%
+  pivot_longer(cols = c(AbstractorDeathmanner_c), names_to = "Variable", values_to = "Value") %>%
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) 
+
+# convert Variable into a factor before plotting
+# mech_suicide_long <- mech_suicide_long %>%
+#   mutate(Value = factor(Value, 
+#                            levels = c("Drowning", 
+#                                       "Fall", 
+#                                       "Firearm", 
+#                                       "Hanging, strangulation, suffocation", 
+#                                       "Motor vehicle including buses, motorcycles", 
+#                                       "Other transport vehicle, eg, trains, planes, boats", 
+#                                       "Poisoning", 
+#                                       "Sharp instrument", 
+#                                       "Unknown"),
+#                            labels = c("Drowning", 
+#                                       "Fall", 
+#                                       "Firearm", 
+#                                       "Hanging, strangulation, suffocation", 
+#                                       "Motor vehicle including buses, motorcycles", 
+#                                       "Other transport vehicle, eg, trains, planes, boats", 
+#                                       "Poisoning", 
+#                                       "Sharp instrument", 
+#                                       "Unknown")))
+
+# mech_suicide_long <- mech_suicide_long %>%
+#   mutate(Value = factor(case_when(is.na(Value) ~ "Unknown", TRUE ~ as.character(Value)), 
+#                         levels = c("Drowning", 
+#                                    "Fall", 
+#                                    "Firearm",
+#                                    "Hanging, strangulation, suffocation",
+#                                    "Motor vehicle including buses, motorcycles",
+#                                    "Other transport vehicle, eg, trains, planes, boats",
+#                                    "Poisoning", 
+#                                    "Sharp instrument", 
+#                                    "Unknown")))
+
+# # Create a bar plot using geom_col
+manner_firearm_plot <- manner_firearm_long %>% 
+ggplot(aes(x = Value, y = Percent, fill = factor(Value))) +
+  geom_col(position = "dodge") +
+  labs(title = "Manner of Intent",
+       fill = "Manner of Intent",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Homicide" = "#3069B2", 
+           "Legal intervention (by police or other authority)" = "#2699BB",
+           "Suicide or intentional self-harm" = "#932A6E",
+           "Undetermined intent" = "#819556",
+           "Unintentional firearm - self-inflicted" = "#FFCC00")) +
+    theme_minimal() +
+theme(axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank())  # Removes x-axis tick marks
+
+ggplotly(manner_firearm_plot)
+```
+
+## Row 2
+
+### Gun Ownership
+
+```{r}
+owner_firearm <- nvdrs_firearm %>% 
+  select(GunOwner1)
+
+# Convert to long format
+
+owner_firearm_long <- owner_firearm %>%
+  pivot_longer(cols = c(GunOwner1), names_to = "Variable", values_to = "Value") %>%
+  mutate(Value = case_when(
+    is.na(Value) ~ "Unknown",
+    Value == "Other (specify)" ~ "Other",
+    Value == "Spouse/Intimate partner of sho" ~ "Spouse/partner of shooter",
+    TRUE ~ Value)) %>%
+  group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+
+
+# # Create a bar plot using geom_col
+owner_firearm_long_plot <- owner_firearm_long %>% 
+ggplot(aes(x = Value, y = Percent, fill = factor(Value))) +
+  geom_col(position = "dodge") +
+  labs(title = "Owner of Firearm",
+       fill = "Owner",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Shooter" = "#3069B2", 
+           "Parent" = "#2699BB",
+           "Other family member" = "#932A6E",
+           "Friend/acquaintance" = "#819556",
+           "Stranger" = "#FFCC00",
+           "Spouse/partner of shooter" = "#Ae8EaF",
+           "Other" = "#CD853F",
+           "Unknown" = "#008B8B")) +
+    theme_minimal() +
+theme(axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank())  # Removes x-axis tick marks
+
+ggplotly(owner_firearm_long_plot)
+
+```
+
+### Type of firearm
+
+```{r}
+type_firearm <- nvdrs_firearm %>% 
+  select(FirearmType1)
+
+# Convert to long format
+type_firearm_long <- type_firearm %>%
+  pivot_longer(cols = c(FirearmType1), names_to = "Variable", values_to = "Value") %>%
+  mutate(Value = ifelse(is.na(Value), "Unknown", Value)) %>%  # Replace NA with "Unknown"
+group_by(Variable, Value) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1)) 
+
+
+
+# # Create a bar plot using geom_col
+type_firearm_long_plot <- type_firearm_long %>% 
+ggplot(aes(x = Value, y = Percent, fill = factor(Value))) +
+  geom_col(position = "dodge") +
+  labs(title = "Type of Firearm",
+       fill = "Type of Firearm",
+       y = "Percentage") +
+  scale_fill_manual(
+values = c("Handgun, Pistol- Derringer" = "#3069B2", 
+           "Handgun, Pistol- Semi-automatic" = "#2699BB",
+           "Handgun, Revolver" = "#932A6E",
+           "Handgun, Unknown Type" = "#819556",
+           "Rifle, Bolt Action" = "#FFCC00",
+           "Rifle, Lever Action" = "#BDB76B",
+           "Rifle, Pump Action" = "#CD853F",
+           "Rifle, Semi-automatic" = "#008B8B",
+           "Rifle, Single Shot" = "#59125B",
+           "Rifle, Unknown Type" = "#306982",
+           "Shotgun, Bolt Action" = "#942D24",
+           "Shotgun, Double Barrel (Over/Under)" = "#E29B9A",
+           "Shotgun, Pump Action" = "#C1D9E0",
+           "Shotgun, Single Shot" = "#Ae8EaF",
+           "Shotgun, Unknown Type" = "#B06D18",
+           "Unknown" = "#A9A9A9")) +
+    theme_minimal() +
+theme(axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank())  # Removes x-axis tick marks
+  
+ggplotly(type_firearm_long_plot)
+
+
+```
+
+```{r}
+# Gun circs (Gun ownership, gun playing, gun showing, gun fired while loading/unloading, gun cleaning, unintentionally pulled trigger, thought gun was unloaded, thought safety engaged)
+
+circs_firearm <- nvdrs_firearm %>% 
+   select(GunPlaying_c,
+          GunShowing_c,
+          GunFiredLoadingUnloading_c,
+          GunCleaning_c,
+          GunUnintentPulledTrigger_c,
+          GunThoughtUnloadedOther_c,
+          GunThoughtSafetyEngaged_c,
+          GunOwner1)
+
+#Count (for value boxes)
+count_gun_play <- circs_firearm %>% 
+  filter(GunPlaying_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_show <- circs_firearm %>% 
+  filter(GunShowing_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_load <- circs_firearm %>% 
+  filter(GunFiredLoadingUnloading_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_clean <- circs_firearm %>% 
+  filter(GunCleaning_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_trigger <- circs_firearm %>% 
+  filter(GunUnintentPulledTrigger_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_unload <- circs_firearm %>% 
+  filter(GunThoughtUnloadedOther_c == "Yes") %>% 
+  count() 
+
+#Count
+count_gun_safety <- circs_firearm %>% 
+  filter(GunThoughtSafetyEngaged_c == "Yes") %>% 
+  count() 
+
+#Count
+ count_gun_owner <- circs_firearm %>% 
+   filter(GunOwner1 == "Yes") %>% 
+   count() 
+```
+
+### 
+
+::: panel-tabset
+#### Gun Playing
+
+```{r}
+value_box(
+  title = "Shooter was playing with gun when it discharged:",
+  value = count_gun_play$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#3069B2"))
+
+```
+
+#### Gun Showing
+
+```{r}
+value_box(
+  title = "Shooter was showing the gun to another person when it discharged:",
+  value = count_gun_show$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#2699BB"))
+
+```
+
+#### Load/Unload
+
+```{r}
+value_box(
+  title = "Shooter was loading/unloading ammunition when it discharged:",
+  value = count_gun_load$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#819556"))
+
+```
+
+#### Clean/Repair
+
+```{r}
+value_box(
+  title = "Shooter pulled trigger or gun otherwise discharged while cleaning/repairing/assembling:",
+  value = count_gun_clean$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#932A6E"))
+
+```
+
+#### Uninten. Trigger
+
+```{r}
+value_box(
+  title = "Shooter unintenionally pulled trigger:",
+  value = count_gun_trigger$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#FFCC00"))
+
+```
+
+#### Thought Unloaded
+
+```{r}
+value_box(
+  title = "Shooter thought gun was unloaded:",
+  value = count_gun_unload$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#3069B2"))
+
+```
+
+#### Thought Safety On
+
+```{r}
+value_box(
+  title = "Shooter thought the safety was on:",
+  value = count_gun_safety$n,
+  showcase = bsicons::bs_icon("bar-chart-line-fill"),
+  theme = value_box_theme(bg = "#2699BB"))
+
+```
+:::
+
+# Definitions
+
+## All Manners of Intent
+
+**Demographics**
+
+Sex: Biological sex of the victim
+
+Sexual Orientation: Includes heterosexual/straight, gay, lesbian, bisexual, or unspecified sexual minority
+
+Transgender Status: Victim self-identifies as transgender or a friend/family member reports that the victim self-identified as transgender
+
+Homeless Status: Having no fixed address *and* living in a shelter, on the street, in a car, or in makeshift quarters in an outdoor setting
+
+Housing Instability Status: Acute or chronic instability in the victim's housing situation appears to have contributed to death (living in motel, couch surfing etc.)
+
+**Mental Health/Substance Abuse**
+
+History of Mental Illness Treatment: History of ever being treated for a mental health or substance abuse problem
+
+Current Mental Health Problem: Victim had been identified as currently having a mental health problem (diagnosis or otherwise reported)
+
+Current Mental Illness Treatment: Victim was currently in treatment for a mental health problem or substance abuse problem
+
+Current Depressed Mood: Victim was perceived by self or others to be depressed at the time of the injury (does not have to be a diagnosis)
+
+Current Alcohol Problem: Victim had alcohol dependence or alcohol problem (diagnosis or otherwise reported)
+
+Current Substance Abuse Problem: Victim had a non-alcohol related substance abuse problem (diagnosis or otherwise reported)
+
+**Relationship and Life Stressors**
+
+Family Relationship Problem: Victim had relationship problems with a family member (other than an intimate partner) that appear to have contributed to the death
+
+Other Relationship Problem: Problems with a friend or associate (other than an intimate partner or family member) appear to have contributed to the death
+
+Previous Perpetrator of Violence: Victim was a perpetrator of violence within the past month that was distinct and occurred before the violence that killed the victim
+
+Previous Victim of Violence: Victim experienced violence in the past month that was distinct and occurred before the violence that killed the victim
+
+Victim Known to Authorities: Victim had contact with or was otherwise known to authorities in the past 12 months
+
+Recent Release From Institution: Death occurred within a month of the decedent being released from or admitted to an institutional setting (hospital, jail/prison etc.)
+
+Abused As A Child: Victim had a history of abuse (physical, mental or emotional) or neglect (physical or emotional) as a child
+
+## Homicide
+
+**Homicide Specific Circumstances**
+
+Intimate Partner Violence: Homicide or legal intervention death was related to immediate or ongoing conflict or violence between current or former intimate partners
+
+Victim Was a Bystander: Victim was a bystander, not the intended target
+
+Random Violence: Victim was killed by a random act of violence
+
+Drug involvement: Drug dealing, drug trade, or drug use is suspected to have played a role in precipitating the incident
+
+Justifiable Self Defense: Homicide was committed by a law enforcement officer in the line of duty or was committed by a civilian in legitimate self-defense or in defense of others
+
+## Suicide
+
+**Suicidal History**
+
+History of Self Harm: History of non-suicidal self-injury/self-harm
+
+History of Suicidal Thoughts: Victim had a history of suicidal thoughts, plans or attempts
+
+History of Suicide Attempt: Victim had a history of attempting suicide before the fatal incident
+
+Suicidal Intent Recently Disclosed: Victim disclosed to another person their thoughts and/or plans to commit suicide within the last month
+
+**Suicide Specific Circumstances**
+
+Intimate Partner Problem: Problems with a current or former intimate partner appear to have contributed to the suicide or undetermined death
+
+Physical Health Problem: Victim's physical health problem(s) appear to have contributed to the death
+
+Financial Problem: Financial problems appear to have contributed to the death
+
+Job Problem: Job problem(s) appear to have contributed to the death
+
+School Problem: Problems at or related to school appear to have contributed to the death
+
+Eviction or Loss of Home: A recent eviction or other loss of the victim's housing, or the threat of it, appears to have contributed to the death
+
+Recent Suicide of Friend or Family: Suicide of a family member or friend appears to have contributed to the death
+
+Non-Suicide Death of Friend or Family: Death of a family member or friend due to something other than suicide appears to have contributed to the death
+
+Traumatic Event Anniversary: Incident occurred on or near the anniversary of a traumatic event in the victim's life and was perceived as a contributing factor

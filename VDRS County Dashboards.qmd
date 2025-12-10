@@ -1,0 +1,131 @@
+---
+title: "VDRS County Dashboards"
+---
+
+## VDRS County Dashboard Setups
+
+```{r}
+#| label: setup
+#| include: false
+
+pacman::p_load(
+  read_csv,
+  tidyverse,
+  dplyr,
+  lubridate,
+  readxl,
+  gtsummary,
+  ggplot2)
+
+
+#Data load
+
+library(readr)
+NVDRS_Dataset_2015_2023 <- read_csv("WA_2023/WA_nvdrs_2015_2023_format.csv")
+
+```
+
+```{r}
+#creating a subset
+
+nvdrs_var <- NVDRS_Dataset_2015_2023 %>% 
+  dplyr::select(IncidentID, 
+                IncidentYear,
+                IncidentCategory_c,
+                PersonType,
+                Age,
+                AgeUnit,
+                AgeYears_c,
+                Sex,
+                SexualOrientation,
+                Transgender,
+                RaceEthnicity_c,
+                Homeless,
+                Military,
+                AbstractorDeathmanner_c,
+                InjuryDate_year,
+                DeathDate_year,
+                ResidenceFIPS,
+                ResidenceZip,
+                InjuryCounty,
+                InjuryZip,
+                InjuryFIPS,
+                InjuredAtVictimHome,
+                InjuryLocationType,
+                RecentRelease,
+                CircumstancesKnown_c,
+                MentalHealthProblem_c,
+                DepressedMood_c,
+                MentalIllnessTreatmentCurrnt_c,
+                HistoryMentalIllnessTreatmnt_c,
+                AlcoholProblem_c,
+                SubstanceAbuseOther_c,
+                IntimatePartnerViolence_c, #homicide
+                IntimatePartnerProblem_c, #suicide
+                FamilyRelationship_c,
+                RelationshipProblemOther_c,
+                InterpersonalViolencePerp_c,
+                InterpersonalViolenceVictim_c,
+                Bystander_c,
+                RandomViolence_c,
+                DrugInvolvement_c,
+                JustifiableSelfDefense_c,
+                SuicideAttemptHistory_c,
+                SuicideThoughtHistory_c,
+                HistorySelfHarm_c,
+                SuicideIntentDisclosed_c,
+                PhysicalHealthProblem_c,
+                FinancialProblem_c,
+                JobProblem_c,
+                EvictionOrLossOfHome_c,
+                RecentSuicideFriendFamily_c,
+                DeathFriendOrFamilyOther_c,
+                TraumaticAnniversary_c,
+                SchoolProblem_c,
+                GunPlaying_c,
+                GunShowing_c,
+                GunFiredLoadingUnloading_c,
+                GunCleaning_c,
+                GunUnintentPulledTrigger_c,
+                GunThoughtUnloadedOther_c,
+                GunThoughtSafetyEngaged_c,
+                GunOwner1,
+                GunOwner2,
+                AlcoholResult,
+                AmphetamineResult,
+                AnticonvulsantsResult,
+                AntiDepressantResult,
+                AntipsychoticResult,
+                BarbituratesResult,
+                BenzodiazepinesResult,
+                CocaineResult,
+                MarijuanaResult,
+                MuscleRelaxantResult,
+                VictimKnownToAuthorities_c,
+                AbusedAsChild_c,
+                PriorCPSReport_c,
+                HouseholdSubstanceAbuse_c,
+                ChildPresent,
+                RecentRelease,
+                Pregnant,
+                HousingInstability,
+                WeaponType1,
+                FirearmType1,
+                GunStoredLoaded1,
+                GunStoredLocked1,
+                FirearmStolen1
+                )
+```
+
+```{r}
+# filtering for county of injury, incident year
+#spokane
+nvdrs_var_spokane <- nvdrs_var %>% filter(InjuryFIPS %in% c("Spokane, WA"))
+saveRDS(nvdrs_var_spokane,file = "2023_Dashboards/nvdrs_var_spokane.rds")
+
+#pierce
+nvdrs_var_pierce <- nvdrs_var %>% filter(InjuryFIPS %in% c("Pierce, WA"))
+saveRDS(nvdrs_var_pierce,file = "2023_Dashboards/nvdrs_var_pierce.rds")
+```
+
+# 
